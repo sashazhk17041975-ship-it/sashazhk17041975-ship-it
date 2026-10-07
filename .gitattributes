@@ -1,0 +1,7 @@
+* text=auto
+*.cmd text eol=crlf
+*.py text eol=lf
+*.md text eol=lf
+*.csv text eol=lf
+*.whl binary
+*.zip binary

@@ -1,0 +1,11 @@
+# Windows x64 / Python 3.12; SHA-256 verified against PyPI release metadata.
+Django==5.2.18 --hash=sha256:92ed81d500be6408ecd704d7bd1366c534f30427bffcc63c5fefb129561aec7c
+django-axes==8.3.1 --hash=sha256:f7887582fd12713064f1602091ff6152752becae5e891a15bf802746cab0f51a
+mysqlclient==2.2.8 --hash=sha256:000c7ec3d11e7c411db832e4cfcd7f05db47464326381f5d5ae991b4bb572f93
+waitress==3.0.2 --hash=sha256:c56d67fd6e87c2ee598b76abdd4e96cfad1f24cacdea5078d382b1f9d7b5ed2e
+python-dotenv==1.2.4 --hash=sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc
+whitenoise==6.12.0 --hash=sha256:fc5e8c572e33ebf24795b47b6a7da8da3c00cff2349f5b04c02f28d0cc5a3cc2
+asgiref==3.12.1 --hash=sha256:fe386d1c2bff7259ea95929266d12a8cf9a8b5a1c2598402967d8792e7a7c094
+packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+sqlparse==0.6.0 --hash=sha256:b861c0288ce2fa56209a9a6412d2e066ac664b3873b89c26c9d8415e8e32996f
+tzdata==2026.5 --hash=sha256:b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac
