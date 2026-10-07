@@ -9,6 +9,7 @@ from pathlib import Path
 
 import MySQLdb
 from dotenv import dotenv_values
+from native_backend import backend_for
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -111,6 +112,16 @@ def main():
         print('Existing database connection works; records and credentials preserved.')
     environment = dict(os.environ, **values)
     environment['DB_HOST'] = config['host']
+    backend, version = backend_for(environment)
+    print('Detected MySQL:', version, 'backend:', backend)
+    if backend == 'mysql57':
+        if values.get('AUTOPARTS_BACKEND') != 'mysql57':
+            # Preserve all existing credentials; remember this schema if MySQL is upgraded later.
+            with path.open('a', encoding='utf-8') as file:
+                file.write('\nAUTOPARTS_BACKEND=mysql57\n')
+        subprocess.run([sys.executable, '-m', 'mysql57'], cwd=ROOT, env=environment, check=True)
+        print('Setup complete for MySQL 5.7. Start start-windows-native.cmd.')
+        return
     for arguments in [
         ['migrate', '--noinput'], ['collectstatic', '--noinput'],
         ['bootstrap_admin'], ['seed_catalog'], ['check'],

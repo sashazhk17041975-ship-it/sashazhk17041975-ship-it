@@ -4,7 +4,7 @@
 
 ## Быстрый запуск на Windows без Docker
 
-1. Установите Python 3.12 x64 и MySQL Server 8.4, если они ещё не установлены.
+1. Установите Python 3.12 x64. Используйте существующий MySQL 5.7 (включая 5.7.31) или MySQL 8.x; если сервера ещё нет, установите MySQL 8.4.
 2. Скачайте проект кнопкой **Code → Download ZIP** на GitHub и распакуйте весь архив в новую папку.
 3. Запустите **install-windows-native.cmd**. При запросе введите пароль MySQL `root`.
 4. После завершения установки запустите **start-windows-native.cmd** — сайт откроется в браузере.
@@ -13,7 +13,7 @@
 
 Для запуска на Windows смотрите [WINDOWS.md](WINDOWS.md). После установки Docker Desktop достаточно распаковать проект и запустить `start-windows.cmd`.
 
-Для **Windows без Docker** используйте [WINDOWS-NATIVE.md](WINDOWS-NATIVE.md): установите Python 3.12 x64 и MySQL 8.4, затем запустите `install-windows-native.cmd` и `start-windows-native.cmd`. Этот вариант использует Waitress и отдельный `requirements-windows.txt`.
+Для **Windows без Docker** используйте [WINDOWS-NATIVE.md](WINDOWS-NATIVE.md): используйте Python 3.12 x64 и MySQL 5.7 либо 8.x, затем запустите `install-windows-native.cmd` и `start-windows-native.cmd`. Этот вариант использует Waitress и отдельный `requirements-windows.txt`. Для MySQL 5.7 установщик выбирает Flask + SQLAlchemy с таблицами `compat_*`; для MySQL 8 используется Django. Форматы CSV и права пользователей сохранены. Поддержка MySQL 5.7.31 проверена на реальном сервере: исходный каталог содержит 1004 детали, 189 производителей и 1000 связей.
 
 ## Возможности
 

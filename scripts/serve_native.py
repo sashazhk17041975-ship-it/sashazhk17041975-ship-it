@@ -7,6 +7,7 @@ import threading
 import time
 import webbrowser
 from pathlib import Path
+from native_backend import backend_for
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -32,14 +33,24 @@ def main():
     # Fail before opening a browser if another program is already on this port.
     with socket.socket() as probe:
         probe.bind((host, port))
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'autoparts.settings')
-    from django.core.wsgi import get_wsgi_application
-    from django.db import connection
-    application = get_wsgi_application()
-    with connection.cursor() as cursor:
-        cursor.execute('SELECT 1 FROM django_migrations LIMIT 1')
-        cursor.fetchone()
-    connection.close()
+    backend, version = backend_for(os.environ)
+    if backend == 'mysql57':
+        from mysql57.app import create_app
+        from mysql57.models import db, User
+        from sqlalchemy import select
+        application = create_app()
+        with application.app_context():
+            db.session.execute(select(User.id).limit(1)).first()
+    else:
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'autoparts.settings')
+        from django.core.wsgi import get_wsgi_application
+        from django.db import connection
+        application = get_wsgi_application()
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1 FROM django_migrations LIMIT 1')
+            cursor.fetchone()
+        connection.close()
+    print('MySQL:', version, 'backend:', backend)
 
     def open_browser():
         for _ in range(30):
