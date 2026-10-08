@@ -1,6 +1,7 @@
 """Run the application locally using Waitress, including on Windows."""
 import os
 import argparse
+import ipaddress
 import socket
 import sys
 import threading
@@ -11,6 +12,20 @@ from native_backend import backend_for
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+def local_ipv4_addresses():
+    """Find addresses assigned to this machine without contacting outside services."""
+    try:
+        records = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+    except OSError:
+        return []
+    addresses = set()
+    for record in records:
+        address = ipaddress.IPv4Address(record[4][0])
+        if not (address.is_loopback or address.is_unspecified or address.is_link_local):
+            addresses.add(str(address))
+    return sorted(addresses)
 
 
 def main():
@@ -25,14 +40,20 @@ def main():
     parser = argparse.ArgumentParser(description='Run AutoAnalogs locally without Docker.')
     parser.add_argument('--port', type=int, default=int(os.environ.get('APP_PORT', '8000')))
     parser.add_argument('--no-browser', action='store_true')
+    parser.add_argument('--lan', action='store_true', help='Allow connections from other computers on the local network.')
     arguments = parser.parse_args()
-    host, port = '127.0.0.1', arguments.port
+    host, port = ('0.0.0.0' if arguments.lan else '127.0.0.1'), arguments.port
     if not 1 <= port <= 65535:
         raise ValueError('APP_PORT must be between 1 and 65535.')
     url = f'http://localhost:{port}'
     # Fail before opening a browser if another program is already on this port.
     with socket.socket() as probe:
         probe.bind((host, port))
+    addresses = local_ipv4_addresses() if arguments.lan else []
+    if arguments.lan:
+        allowed = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+        allowed = list(dict.fromkeys(allowed + ['localhost', '127.0.0.1', socket.gethostname()] + addresses))
+        os.environ['DJANGO_ALLOWED_HOSTS'] = ','.join(allowed)
     backend, version = backend_for(os.environ)
     if backend == 'mysql57':
         from mysql57.app import create_app
@@ -55,7 +76,7 @@ def main():
     def open_browser():
         for _ in range(30):
             try:
-                with socket.create_connection((host, port), timeout=0.3):
+                with socket.create_connection(('127.0.0.1', port), timeout=0.3):
                     webbrowser.open(url)
                     return
             except OSError:
@@ -64,6 +85,13 @@ def main():
     if not arguments.no_browser:
         threading.Thread(target=open_browser, daemon=True).start()
     print(f'AutoAnalogs: {url}. Keep this window open; press Ctrl+C to stop.', flush=True)
+    if arguments.lan:
+        print('Local network access enabled. Other computers can open:', flush=True)
+        for address in addresses:
+            print(f'  http://{address}:{port}', flush=True)
+        if not addresses:
+            print(f'  Run ipconfig and use your Ethernet/Wi-Fi IPv4 address with port {port}.', flush=True)
+        print('Windows: allow this port on Private networks (LocalSubnet). See WINDOWS-NATIVE.md.', flush=True)
     serve(application, host=host, port=port, threads=4, clear_untrusted_proxy_headers=True)
 
 
