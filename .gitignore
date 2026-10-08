@@ -6,3 +6,5 @@ staticfiles/
 .coverage
 .pytest_cache/
 *.sql
+cloudflared.exe
+cloudflared-windows-amd64.exe

@@ -43,6 +43,12 @@ def create_app(config=None):
     if len(app.config['SECRET_KEY']) < 32:
         raise ValueError('DJANGO_SECRET_KEY must contain at least 32 characters.')
     db.init_app(app)
+
+    @app.before_request
+    def require_https():
+        if app.config.get('REQUIRE_HTTPS') and not request.is_secure:
+            return redirect(request.url.replace('http://', 'https://', 1), code=308)
+
     CSRFProtect(app)
     login_manager = LoginManager(app)
     login_manager.login_view = 'login'

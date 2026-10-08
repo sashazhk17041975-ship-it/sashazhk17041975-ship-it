@@ -2,6 +2,7 @@
 import os
 import argparse
 import ipaddress
+import re
 import socket
 import sys
 import threading
@@ -40,12 +41,22 @@ def main():
     parser = argparse.ArgumentParser(description='Run AutoAnalogs locally without Docker.')
     parser.add_argument('--port', type=int, default=int(os.environ.get('APP_PORT', '8000')))
     parser.add_argument('--no-browser', action='store_true')
-    parser.add_argument('--lan', action='store_true', help='Allow connections from other computers on the local network.')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--lan', action='store_true', help='Allow connections from other computers on the local network.')
+    mode.add_argument('--public-host', help='HTTPS hostname supplied by the internet tunnel launcher.')
     arguments = parser.parse_args()
     host, port = ('0.0.0.0' if arguments.lan else '127.0.0.1'), arguments.port
     if not 1 <= port <= 65535:
         raise ValueError('APP_PORT must be between 1 and 65535.')
     url = f'http://localhost:{port}'
+    if arguments.public_host:
+        if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*\.trycloudflare\.com', arguments.public_host):
+            raise ValueError('Expected the HTTPS hostname of a Cloudflare Quick Tunnel.')
+        url = f'https://{arguments.public_host}'
+        os.environ['DJANGO_ALLOWED_HOSTS'] = arguments.public_host
+        os.environ['DJANGO_CSRF_TRUSTED_ORIGINS'] = url
+        os.environ['DJANGO_HTTPS'] = 'true'
+        os.environ['DJANGO_DEBUG'] = 'false'
     # Fail before opening a browser if another program is already on this port.
     with socket.socket() as probe:
         probe.bind((host, port))
@@ -59,7 +70,7 @@ def main():
         from mysql57.app import create_app
         from mysql57.models import db, User
         from sqlalchemy import select
-        application = create_app()
+        application = create_app({'SESSION_COOKIE_SECURE': True, 'REQUIRE_HTTPS': True, 'TRUSTED_HOSTS': [arguments.public_host]} if arguments.public_host else None)
         with application.app_context():
             db.session.execute(select(User.id).limit(1)).first()
     else:
@@ -92,7 +103,8 @@ def main():
         if not addresses:
             print(f'  Run ipconfig and use your Ethernet/Wi-Fi IPv4 address with port {port}.', flush=True)
         print('Windows: allow this port on Private networks (LocalSubnet). See WINDOWS-NATIVE.md.', flush=True)
-    serve(application, host=host, port=port, threads=4, clear_untrusted_proxy_headers=True)
+    proxy = {'trusted_proxy': '127.0.0.1', 'trusted_proxy_headers': {'x-forwarded-proto'}} if arguments.public_host else {}
+    serve(application, host=host, port=port, threads=4, clear_untrusted_proxy_headers=True, **proxy)
 
 
 if __name__ == '__main__':
