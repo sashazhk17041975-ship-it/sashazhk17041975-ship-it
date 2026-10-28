@@ -27,14 +27,64 @@ function renderHistory(){$('history-list').replaceChildren(...(history.length?hi
 $('clear-history').onclick=()=>{history=[];persist();renderHistory();toast('История очищена')};
 $('help').onclick=()=>$('help-dialog').showModal();$('close-help').onclick=()=>$('help-dialog').close();
 let stream=null,scanActive=false,scanEpoch=0,ocrBusy=false;
-function stopCamera(){scanActive=false;scanEpoch++;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('video').srcObject=null;$('camera-placeholder').hidden=false}
-$('scan').onclick=()=>{$('scan-dialog').showModal();$('scan-status').textContent='Сканируйте штрихкод VIN камерой или загрузите фото с напечатанным VIN.'};
+function stopCamera(){scanActive=false;scanEpoch++;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;$('video').srcObject=null;$('camera-placeholder').hidden=false;$('capture-vin').hidden=true}
+$('scan').onclick=()=>{$('scan-dialog').showModal();$('scan-status').textContent='Текст VIN: включите камеру и нажмите «Снять и распознать» или загрузите фото. Штрихкод сканируется автоматически, если браузер это поддерживает.'};
 $('close-scan').onclick=()=>$('scan-dialog').close();$('scan-dialog').addEventListener('close',stopCamera);
-function acceptScan(text){const normalized=normalize(text);const matches=normalized.match(/[A-HJ-NPR-Z0-9]{17}/g);if(!matches)return false;stopCamera();$('scan-dialog').close();setView('search');$('vin').value=matches[0];updateInput();$('vin').focus();toast('VIN распознан. Проверьте символы перед поиском.');return true}
-$('start-camera').onclick=async()=>{stopCamera();const epoch=scanEpoch;try{if(!navigator.mediaDevices?.getUserMedia)throw Error('Камера недоступна в этом браузере. Загрузите фото VIN.');if(!('BarcodeDetector' in window))throw Error('Браузер не поддерживает сканер штрихкодов. Загрузите фото VIN для распознавания текста.');const supported=await BarcodeDetector.getSupportedFormats();const formats=['code_39','code_128','qr_code','data_matrix','pdf417'].filter(f=>supported.includes(f));if(!formats.length)throw Error('Подходящие штрихкоды не поддерживаются. Загрузите фото VIN.');const detector=new BarcodeDetector({formats});const newStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(epoch!==scanEpoch||!$('scan-dialog').open){newStream.getTracks().forEach(t=>t.stop());return}stream=newStream;$('video').srcObject=stream;await $('video').play();$('camera-placeholder').hidden=true;scanActive=true;$('scan-status').textContent='Наведите камеру на штрихкод VIN. Для текста используйте фото.';const tick=async()=>{if(!scanActive||epoch!==scanEpoch)return;try{const codes=await detector.detect($('video'));if(epoch!==scanEpoch)return;for(const code of codes)if(acceptScan(code.rawValue))return}catch{}if(scanActive&&epoch===scanEpoch)setTimeout(tick,250)};tick()}catch(e){stopCamera();$('scan-status').textContent=e.name==='NotAllowedError'?'Доступ к камере запрещён. Разрешите доступ в настройках или загрузите фото.':e.message}};
-let ocrPromise;function loadOCR(){if(window.Tesseract)return Promise.resolve();if(!ocrPromise)ocrPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';script.onload=resolve;script.onerror=()=>{script.remove();ocrPromise=null;reject(Error('Не удалось загрузить OCR. Проверьте интернет или введите VIN вручную.'))};document.head.append(script)});return ocrPromise}
-$('photo-button').onclick=()=>$('photo').click();
-$('photo').onchange=async()=>{const file=$('photo').files[0];if(!file||ocrBusy)return;if(file.size>15*1024*1024){$('scan-status').textContent='Выберите фото размером до 15 МБ.';return}stopCamera();ocrBusy=true;$('photo-button').disabled=true;$('start-camera').disabled=true;let worker;try{$('scan-status').textContent='Загрузка модуля распознавания…';await loadOCR();worker=await Tesseract.createWorker('eng',1,{workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',langPath:'https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int',logger:m=>{if($('scan-dialog').open)$('scan-status').textContent=m.status==='recognizing text'?'Распознавание VIN: '+Math.round(m.progress*100)+'%':'Подготовка распознавания…'}});await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHJKLMNPRSTUVWXYZ0123456789',preserve_interword_spaces:'1'});const result=await worker.recognize(file);if($('scan-dialog').open&&!acceptScan(result.data.text))$('scan-status').textContent='Не найден VIN из 17 символов. Сделайте чёткое фото без бликов или введите VIN вручную.'}catch(e){$('scan-status').textContent='Не удалось распознать фото. Проверьте интернет, используйте JPG/PNG или введите VIN вручную.'}finally{if(worker)await worker.terminate();ocrBusy=false;$('photo-button').disabled=false;$('start-camera').disabled=false;$('photo').value=''}};
+function acceptVin(vin){if(vinError(vin))return false;stopCamera();$('scan-dialog').close();setView('search');$('vin').value=vin;updateInput();$('vin').focus();toast('VIN перенесён. Сверьте все 17 символов с документом.');return true}
+function acceptScan(text){const candidates=VinParser.extract(text);return candidates.length===1&&acceptVin(candidates[0])}
+function showCandidates(text){
+ $('ocr-text').value=text;$('ocr-review').hidden=false;
+ const candidates=VinParser.extract(text);
+ $('vin-candidates').replaceChildren(...candidates.map(vin=>{const b=document.createElement('button');b.className='secondary';b.type='button';b.textContent=vin+' →';b.onclick=()=>acceptVin(vin);return b}));
+ $('scan-status').textContent=candidates.length?'Найдены варианты VIN. Сверьте с документом и нажмите нужный номер.':'VIN не найден. Проверьте распознанный текст ниже. Сфотографируйте крупнее строку «Кузаў (рама) №» и VIN после неё.';
+}
+$('start-camera').onclick=async()=>{
+ if(ocrBusy)return;stopCamera();const epoch=scanEpoch;
+ try{
+  if(!navigator.mediaDevices?.getUserMedia)throw Error('Камера недоступна. Нажмите «Сделать фото телефоном» или загрузите фото.');
+  const newStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+  if(epoch!==scanEpoch||!$('scan-dialog').open){newStream.getTracks().forEach(t=>t.stop());return}
+  stream=newStream;$('video').srcObject=stream;await $('video').play();
+  if(epoch!==scanEpoch)return;
+  $('camera-placeholder').hidden=true;$('capture-vin').hidden=false;scanActive=true;
+  $('scan-status').textContent='Наведите камеру на строку «Кузаў (рама) №» и VIN рядом с ней. Нажмите «Снять и распознать».';
+  if(!('BarcodeDetector' in window))return;
+  let detector;try{const supported=await BarcodeDetector.getSupportedFormats();const formats=['code_39','code_128','qr_code','data_matrix','pdf417'].filter(f=>supported.includes(f));if(!formats.length)return;detector=new BarcodeDetector({formats})}catch{return}
+  const tick=async()=>{if(!scanActive||epoch!==scanEpoch)return;try{const codes=await detector.detect($('video'));if(epoch!==scanEpoch)return;for(const code of codes)if(acceptScan(code.rawValue))return}catch{}if(scanActive&&epoch===scanEpoch)setTimeout(tick,350)};tick();
+ }catch(e){if(epoch!==scanEpoch)return;stopCamera();$('scan-status').textContent=e.name==='NotAllowedError'?'Камера запрещена. Разрешите доступ в настройках телефона либо нажмите «Сделать фото телефоном».':e.message}
+};
+let ocrPromise;
+function loadOCR(){if(window.Tesseract)return Promise.resolve();if(!ocrPromise)ocrPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';script.onload=resolve;script.onerror=()=>{script.remove();ocrPromise=null;reject(Error('Не удалось загрузить OCR. Проверьте интернет и повторите.'))};document.head.append(script)});return ocrPromise}
+function setBusy(value){ocrBusy=value;for(const id of ['photo-button','start-camera','take-photo','capture-vin'])$(id).disabled=value;$('cancel-ocr').hidden=!value}
+let activeWorker=null,ocrEpoch=0;
+async function cancelOCR(){ocrEpoch++;if(activeWorker){const w=activeWorker;activeWorker=null;await w.terminate().catch(()=>{})}setBusy(false);$('scan-status').textContent='Распознавание отменено. Можно выбрать другое фото.'}
+$('cancel-ocr').onclick=cancelOCR;$('scan-dialog').addEventListener('close',()=>{if(ocrBusy)cancelOCR()});
+async function preparePhoto(file){
+ const url=URL.createObjectURL(file);try{const img=new Image();img.src=url;await img.decode();const scale=Math.min(2,2400/Math.max(img.naturalWidth,img.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.round(img.naturalWidth*scale);canvas.height=Math.round(img.naturalHeight*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);return canvas}finally{URL.revokeObjectURL(url)}
+}
+async function recognizePhoto(file){
+ if(!file||ocrBusy)return;
+ if(file.size>15*1024*1024){$('scan-status').textContent='Выберите фото до 15 МБ.';return}
+ stopCamera();setBusy(true);$('ocr-review').hidden=true;const epoch=++ocrEpoch;let worker;
+ try{
+  $('scan-status').textContent='Подготовка фото…';const canvas=await preparePhoto(file);if(epoch!==ocrEpoch)return;
+  $('scan-status').textContent='Загрузка OCR и языков. Первый запуск может занять около минуты…';await loadOCR();if(epoch!==ocrEpoch)return;
+  worker=await Tesseract.createWorker(['eng','rus'],1,{workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',langPath:'https://cdn.jsdelivr.net/gh/tesseract-ocr/tessdata_fast@4.1.0',gzip:false,logger:m=>{if(epoch!==ocrEpoch||!$('scan-dialog').open)return;$('scan-status').textContent=m.status==='recognizing text'?'Распознавание текста: '+Math.round(m.progress*100)+'%':'Загрузка модуля и языков: '+Math.round((m.progress||0)*100)+'%'}});
+  if(epoch!==ocrEpoch)return;activeWorker=worker;
+  await worker.setParameters({preserve_interword_spaces:'1',tessedit_pageseg_mode:'11'});
+  let result=await worker.recognize(canvas);if(epoch!==ocrEpoch)return;
+  if(!VinParser.extract(result.data.text).length){$('scan-status').textContent='Повторное распознавание строк…';await worker.setParameters({tessedit_pageseg_mode:'6'});const retry=await worker.recognize(canvas);result.data.text+='\n'+retry.data.text}
+  if(epoch===ocrEpoch&&$('scan-dialog').open)showCandidates(result.data.text);
+ }catch(e){if(epoch===ocrEpoch)$('scan-status').textContent='Распознавание не завершено. Проверьте интернет, используйте JPG/PNG и снимите VIN крупнее. Ошибка: '+(e.message||'модуль OCR недоступен').slice(0,120)}
+ finally{if(worker){if(activeWorker===worker)activeWorker=null;await worker.terminate().catch(()=>{})}if(epoch===ocrEpoch)setBusy(false)}
+}
+$('photo-button').onclick=()=>$('photo').click();$('take-photo').onclick=()=>$('camera-photo').click();
+for(const id of ['photo','camera-photo'])$(id).onchange=async()=>{try{await recognizePhoto($(id).files[0])}finally{$(id).value=''}};
+$('capture-vin').onclick=()=>{
+ const video=$('video');if(!video.videoWidth||ocrBusy)return;
+ const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;canvas.getContext('2d').drawImage(video,0,0);canvas.toBlob(blob=>{if(blob&&$('scan-dialog').open)recognizePhoto(blob)},'image/jpeg',.95);
+};
+$('use-ocr-text').onclick=()=>{const candidates=VinParser.extract($('ocr-text').value);if(candidates.length===1)acceptVin(candidates[0]);else showCandidates($('ocr-text').value)};
 for(const dialog of document.querySelectorAll('dialog'))dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close()}});
 updateCounts();
 
